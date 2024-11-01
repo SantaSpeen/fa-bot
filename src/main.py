@@ -147,8 +147,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "`/set <команда> <значение>`; Доступные команды:\n"
                     "  `url` - установить URL страницы с расписанием\n"
                     "  `find` - установить строку для поиска файла\n"
-                    "  `sheet` - установить название листа в файле с расписанием\n"
-                    "  `ofo` - переключить форму обучения\n",
+                    "  `sheet` - установить название листа в файле с расписанием\n",
                     parse_mode='Markdown'
                 )
             case "/set_save_path":
