@@ -4,7 +4,7 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 
-def download_file(url, find):
+def download_file(url, find, save_path, even_week):
     response = requests.get(url)
     if response.status_code == 200:
         # Парсим HTML-код страницы
@@ -16,10 +16,11 @@ def download_file(url, find):
                 a.get('href') and a.get("href").endswith(".xls") and find in a.text]
 
         if link:
+            link = link[1 if even_week else 0]
             # Получаем полный URL файла
-            file_url = "http://www.fa.ru" + link[0]
-            file_name = os.path.basename(link[0]).replace("'","").replace(" ", "_")
-            file_path = f"data/{file_name}"
+            file_url = "http://www.fa.ru" + link
+            file_name = os.path.basename(link).replace("'","").replace(" ", "_")
+            file_path = save_path / file_name
 
             if os.path.exists(file_path):
                 print(f"Файл '{file_name}' уже существует.")

@@ -1,8 +1,9 @@
 from .parser import parse_xls
 from .find_url import download_file
+from .config import Config
 
 
-def render_data(data):
+def render_data(data, ofo=True):
     s = f"<b>Неделя:</b> {data[-1]}\n\n"
     for day in data:
         if isinstance(day, str):
@@ -21,10 +22,11 @@ def render_data(data):
                 f"<i>Преподаватель:</i> {lesson['teacher'].lower().capitalize()}\n"
                 f"<i>Местоположение:</i> {lesson['place']}\n"
             )
-            if lesson['link']:
-                s += f'<i>Ссылка:</i> <a href="{lesson['link']}">Подключится</a>\n\n'
-            else:
-                s += '<i>Ссылка:</i> <b>Ссылки нет в базе.</b>\n\n'
+            if not ofo:
+                if lesson['link']:
+                    s += f'<i>Ссылка:</i> <a href="{lesson['link']}">Подключится</a>\n\n'
+                else:
+                    s += '<i>Ссылка:</i> <b>Ссылки нет в базе.</b>\n\n'
         if not lessons:
             s += "<b>Нет пар</b>\n\n"
 

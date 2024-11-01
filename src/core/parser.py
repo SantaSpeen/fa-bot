@@ -29,12 +29,23 @@ def say_nani_to_nan(x):
         return None
     return x
 
-def parse_xls(file_path, sheet_name):
+
+def parse_xls(file_path, sheet_name, even_week=None):
+
+    if even_week is False:
+        sheet_name += " НЧН"
+    if even_week is True:
+        sheet_name += " ЧН"
+    print(f"Читаю {sheet_name!r} в файле.")
+
+    sheet_names = list(pd.read_excel(file_path, sheet_name=None).keys())
+    if sheet_name not in sheet_names:
+        return f"\nЛист `{sheet_name}` не доступен. Доступные листы: \n{'\n'.join(sheet_names)}\n"
+
     # Загружаем данные из .xls в DataFrame
     df = pd.read_excel(file_path, sheet_name=sheet_name)
 
     data = [{"date": None, "lessons": [{"name": None, "teacher": None, "time": None, "place": None, "link": None} for _ in range(8)]} for _ in range(len_week)]
-
     # Отбираем нужные строки
     for j, (start_day, end_day) in enumerate(week):
         c = 0  # class
