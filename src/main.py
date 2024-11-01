@@ -56,7 +56,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         s = f'Документ сохранен: `{file_path.name}`.\nОбработка файла...'
         await context.bot.editMessageText(s, mid.chat_id, mid.message_id, parse_mode='Markdown')
-        await render_and_send(update, context, file_path)
+        even_week = None
+        if config.get(update.message.chat.id).ofo:
+            even_week = not "1" in update.message.text
+        await render_and_send(update, context, file_path, even_week)
     else:
         await update.message.reply_text('Пожалуйста, ответьте на сообщение с документом.')
 
