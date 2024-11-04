@@ -28,7 +28,9 @@ async def render_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE, fi
             return
         if isinstance(data, str):
             raise Exception(data)
-        await context.bot.send_message(chat_id=chat_id, text=render_data(data, "офо" in file.name.lower()), parse_mode='HTML')
+        text, parse_mode = render_data(data, "офо" in file.name.lower())
+        # print(text)
+        await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
         traceback.print_exc()
         await update.message.reply_text(f'Ошибка при обработке файла: {e}', parse_mode='Markdown')
@@ -64,7 +66,7 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('Пожалуйста, ответьте на сообщение с документом.')
 
 async def handle_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not config.get(update.effective_chat.id).ready:
+    if not config.get(update.effective_chat.id).ready():
         await update.message.reply_text("Настройки не установлены.")
         return
     if config.get(update.effective_chat.id).ofo:
