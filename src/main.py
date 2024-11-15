@@ -1,35 +1,86 @@
 import asyncio
+import json
 import os
 import traceback
-from pathlib import Path
 
-from telegram import Update, LinkPreviewOptions
+from telegram import Update, LinkPreviewOptions, InputFile
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-from core import download_file, parse_xls, render_data, Config
-from core.parser import links
+from core import Templator, Config, Parser
 
 # /set find 1 курс ОЗФО
 # /set sheet 1к Прикладная математика
+
+help_msg = """\
+Доступные команды:
+  /auto - автоматический поиск и обработка файла
+  /file - обработка файла из ответа на сообщение
+  /settings - Настройки чата
+Команды для настройки:
+  (Для каждого чата настраивается отдельно)
+  /set <команда> [[значение]]
+  /template <команда> [[значение]]
+{}
+Использованные ресурсы:
+- [Сайт МФИ](http://www.fa.ru/)
+- [Бот](http://github.com/SantaSpeen/fa-bot)
+"""
+help_msg_admin = r"""
+Админские команды:
+    /set\_save\_path - установить путь для сохранения файлов
+    /reload - перезагрузить данные (chats, links, templates)
+"""
+
+allow_set_cmds = ("help", "find", "sheet", "url")
+set_help = """\
+Использование: `/set <команда> [значение]`
+Доступные команды:
+  `help` - вывести это сообщение
+  `url` - установить URL страницы с расписанием
+  `find` - установить строку для поиска файла
+  `sheet` - установить название листа в файле с расписанием
+Пример:
+ - `/set find 1 курс ОЗФО`
+ - `/set sheet 1к Прикладная математика`
+Что бы настройки: 
+/settings\
+"""
+
+allow_template_cmds = ("help", "list", "use", "custom")
+template_help = """\
+Использование: `/template <команда> [значение]`
+Доступные команды:
+  `help` - Вывести это сообщение
+  `list` - Вывести список доступных шаблонов
+  `use` - Использовать шаблон из доступных
+  `custom` - Загрузить свой шаблон (не доступно)
+Пример:
+  - `/template list`
+  - `/template use default`\
+"""
 
 username = ""
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-config = Config("config.json", "chats.json")
+config = Config("config.json")
+templator = Templator(config.templates)
+parser = Parser(config.links, config.save_path)
 
-async def render_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE, file: Path, even_week):
+async def render_and_send(update, context, file, even_week):
     try:
         chat_id = update.effective_chat.id
-        data = parse_xls(file, config.get(chat_id).sheet_name, even_week)
+        chat = config.get_chat(chat_id)
+        data = parser.parse_xml(chat, file, even_week)
+        # print(data)
         if not data:
             await update.message.reply_text('Ошибка при обработке файла.')
             return
         if isinstance(data, str):
             raise Exception(data)
-        text, parse_mode = render_data(data, "офо" in file.name.lower())
-        # print(text)
+        template = templator.get(chat)
+        text, parse_mode = template.render(data, file.name)
         await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
         traceback.print_exc()
@@ -59,38 +110,34 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
         s = f'Документ сохранен: `{file_path.name}`.\nОбработка файла...'
         await context.bot.editMessageText(s, mid.chat_id, mid.message_id, parse_mode='Markdown')
         even_week = None
-        if config.get(update.message.chat.id).ofo:
+        if config.get_chat(update.message.chat.id).ofo:
             even_week = not "1" in update.message.text
         await render_and_send(update, context, file_path, even_week)
     else:
         await update.message.reply_text('Пожалуйста, ответьте на сообщение с документом.')
 
 async def handle_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not config.get(update.effective_chat.id).ready():
+    if not config.get_chat(update.effective_chat.id).ready():
         await update.message.reply_text("Настройки не установлены.")
         return
-    if config.get(update.effective_chat.id).ofo:
+    if config.get_chat(update.effective_chat.id).ofo:
         await update.message.reply_text("Для ОФО нет поддержки так как админу лень делать поддержку 2х групп.\n"
                                         "Админ: @id0124\n"
                                         "Ссылка на проект для тех, кто хочет что-то изменить: [github](https://github.com/SantaSpeen/fa-bot)",
                                         parse_mode='Markdown', link_preview_options=LinkPreviewOptions(True))
         return
     mid = await update.message.reply_text("Поиск файла на сайте универа..", parse_mode='Markdown')
-    chat_id = update.effective_chat.id
-    chat_info = config.get(chat_id)
+    chat = config.get_chat(update.effective_chat.id)
     even_week = None
-    if chat_info.ofo:
+    if chat.ofo:
         even_week = not "1" in update.message.text
-    file_path = download_file(chat_info.url, chat_info.find, config.save_path, even_week)
+    file_path = parser.download(chat, even_week)
     if not file_path:
         await context.bot.editMessageText('Ошибка при загрузке файла.', mid.chat_id, mid.message_id, parse_mode='Markdown')
         return
-    # изменить сообщение mid
     s = f'Документ сохранен: `{file_path.name}`.\nОбработка файла...'
     await context.bot.editMessageText(s, mid.chat_id, mid.message_id, parse_mode='Markdown')
     await render_and_send(update, context, file_path, even_week)
-
-allow_set_cmds = ("find", "sheet", "url")
 
 async def handle_settings(update: Update):
     cmd = update.message.text.split(" ")
@@ -100,32 +147,111 @@ async def handle_settings(update: Update):
             "Ипользуйте команду в формате `/set <команда> <значение>`\n"
             f"Доступные команды: `{'`, `'.join(allow_set_cmds)}`", parse_mode='Markdown')
         return
-    set_cmd, set_data = setts.split(" ", 1)
-    if set_cmd not in allow_set_cmds:
-        await update.message.reply_text(f"Недопустимая команда: `{set_cmd}`")
+    data = setts.split(" ", 1)
+    subcmd = data[0]
+    if subcmd not in allow_set_cmds:
+        await update.message.reply_text(f"Недопустимая команда: `{subcmd}`")
         return
-    if not set_data:
-        await update.message.reply_text(f"Укажите значение для установки: `/set {set_cmd} <значение>`")
+    if subcmd == "help":
+        return await update.message.reply_text(set_help, parse_mode='Markdown')
+    if len(data) == 1:
+        await update.message.reply_text(f"Укажите значение для установки: `/set {subcmd} <значение>`", "Markdown")
         return
-    chat_info = config.get(update.message.chat.id)
-    match set_cmd:
+    set_data = data[1]
+    chat = config.get_chat(update.message.chat.id)
+    match subcmd:
         case "url":
-            chat_info.url = set_data
+            chat.url = set_data
             await update.message.reply_text(f"URL страницы с расписанием изменен на `{set_data}`", parse_mode='Markdown')
         case "find":
-            if not chat_info.check_find(set_data):
+            if not chat.check_find(set_data):
                 await update.message.reply_text(f"Недопустимое значение: `{set_data}`", parse_mode='Markdown')
                 return
-            chat_info.find = set_data
+            chat.find = set_data
             await update.message.reply_text(f"Строка для поиска файла изменена на `{set_data}`", parse_mode='Markdown')
         case "sheet":
-            if not chat_info.check_sheet(set_data):
+            if not chat.check_sheet(set_data):
                 await update.message.reply_text(f"Недопустимое значение: `{set_data}`", parse_mode='Markdown')
                 return
-            chat_info.sheet_name = chat_info.fix_sheet(set_data)
+            chat.sheet_name = chat.fix_sheet(set_data)
             await update.message.reply_text(f"Название листа в файле с расписанием изменено на `{set_data}`. "
-                                            f"{"Чётность недели убрана." if chat_info.sheet_name != set_data else ""}", parse_mode='Markdown')
-    config.save()
+                                            f"{"Чётность недели убрана." if chat.sheet_name != set_data else ""}", parse_mode='Markdown')
+
+async def handle_template(update: Update):
+    cmd = update.message.text.split(" ")
+    cmd, setts = cmd[0], " ".join(cmd[1:])
+    if not setts:
+        await update.message.reply_text(
+            "Ипользуйте команду в формате `/template <команда> [значение]`\n"
+            f"Доступные команды: `{'`, `'.join(allow_template_cmds)}`", parse_mode='Markdown')
+        return
+    data = setts.split(" ", 1)
+    subcmd = data[0]
+    if subcmd not in allow_template_cmds:
+        await update.message.reply_text(f"Недопустимая команда: `{subcmd}`")
+        return
+    chat = config.get_chat(update.message.chat.id)
+    match subcmd, len(data):
+        case "help", _:
+            await update.message.reply_text(template_help, parse_mode='Markdown')
+        case "list", 1:
+            _s = ""
+            for tem in templator.list:
+                _s += f"  - `{tem}`\n"
+            s = f"Доступные шаблоны:\n{_s}"
+            await update.message.reply_text(s, "Markdown")
+        case "use", 2:
+            set_data = data[1]
+            if set_data in templator.list:
+                await update.message.reply_text(f"Установлено новое значение: `{chat.template}` > `{set_data}`", 'Markdown')
+                chat.template = set_data
+                return
+            await update.message.reply_text(f"Шаблон '{set_data}' не найден.", 'Markdown')
+        case "custom", 2:
+            await update.message.reply_text("Загрузка кастомных шаблонов пока что не реализована.", 'Markdown')
+            # chat.template = "custom"
+            # chat.use_custom_template = True
+        case _:
+            await update.message.reply_text("Недопустимая команда.", "Markdown")
+
+
+async def handle_private_messages(update, cmd, setts):
+    match cmd:
+        case "/start":
+            await update.message.reply_text("/help")
+        case "/help":
+            uid = update.message.from_user.id
+            await update.message.reply_text(
+                help_msg.format("") if not uid in config.admins else help_msg.format(help_msg_admin),
+                parse_mode='Markdown', disable_web_page_preview=True
+            )
+        case "/set_save_path":
+            if not update.message.from_user.id in config.admins:
+                await update.message.reply_text("Ты не админ")
+                return
+            if not setts:
+                await update.message.reply_text(
+                    f"Укажите путь для сохранения файлов: `/set_save_path <path>`\nTекущий путь: `{config.save_path}`",
+                    parse_mode='Markdown')
+                return
+            old_path = config.config_file['save_path']
+            try:
+                config.config_file['save_path'] = setts
+                if not os.path.exists(config.config_file['save_path']):
+                    os.makedirs(config.config_file['save_path'])
+                await update.message.reply_text(f"Путь для сохранения файлов изменен с `{old_path}` на `{setts}`",
+                                                parse_mode='Markdown')
+            except Exception as e:
+                await update.message.reply_text(f"Ошибка при изменении пути: {e}")
+                config.config_file['save_path'] = old_path
+            config.save()
+        case "/reload":
+            if not update.message.from_user.id in config.admins:
+                await update.message.reply_text("Ты не админ")
+                return
+            await update.message.reply_text(f"Chats Store:\n  {config.reload_chats()}")
+            await update.message.reply_text(f"Links:\n  {parser.reload()}")
+            await update.message.reply_text(f"Templates:\n  {templator.reload()}")
 
 # Функция для обработки ответов на сообщения
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -138,40 +264,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     cmd = cmd.replace(f"@{username}", "")
     print(f"Команда: {cmd!r}; Аргументы: {setts!r}")
     if update.message.chat.type == 'private':
-        match cmd:
-            case "/start":
-                await update.message.reply_text("/help")
-            case "/help":
-                await update.message.reply_text(
-                    "Доступные команды:\n"
-                    "/auto - автоматический поиск и обработка файла\n"
-                    "/file - обработка файла из ответа на сообщение\n"
-                    "/settings - Настройки чата\n"
-                    "Команды для настройки:\n"
-                    "(Для каждого чата настраивается отдельно)\n"
-                    "`/set <команда> <значение>`; Доступные команды:\n"
-                    "  `url` - установить URL страницы с расписанием\n"
-                    "  `find` - установить строку для поиска файла\n"
-                    "  `sheet` - установить название листа в файле с расписанием\n",
-                    parse_mode='Markdown'
-                )
-            case "/set_save_path":
-                if not update.message.from_user.id in config.admins:
-                    await update.message.reply_text("Ты не админ")
-                    return
-                if not setts:
-                    await update.message.reply_text(f"Укажите путь для сохранения файлов: `/set_save_path <path>`\nTекущий путь: `{config.save_path}`", parse_mode='Markdown')
-                    return
-                old_path = config.global_config['save_path']
-                try:
-                    config.global_config['save_path'] = setts
-                    if not os.path.exists(config.global_config['save_path']):
-                        os.makedirs(config.global_config['save_path'])
-                    await update.message.reply_text(f"Путь для сохранения файлов изменен с `{old_path}` на `{setts}`", parse_mode='Markdown')
-                except Exception as e:
-                    await update.message.reply_text(f"Ошибка при изменении пути: {e}")
-                    config.global_config['save_path'] = old_path
-                config.save()
+        await handle_private_messages(update, cmd, setts)
 
     match cmd:
         case "/auto":
@@ -180,25 +273,30 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await handle_file(update, context)
         case "/set":
             await handle_settings(update)
+            config.save_chats()
+        case "/template":
+            await handle_template(update)
+            config.save_chats()
         case "/settings":
-            chat_info = config.get(update.message.chat.id)
-            if not chat_info.ready():
-                await update.message.reply_text("Настройки не установлены.")
-                return
+            chat = config.get_chat(update.message.chat.id)
             s = (
-                "**Настройки чата**:\n"
-                f" Форма обучения: `{'очное' if chat_info.ofo else 'очно-заочное/заочное'}`\n"
-                f" URL страницы с расписанием: `{chat_info.url}`\n"
-                f" Строка для поиска файла: `{chat_info.find}`\n"
-                f" Название листа в файле: `{chat_info.sheet_name}`"
+                f"**Настройки чата #`{update.message.chat_id}`**:\n"
+                f" Форма обучения: `{('очное' if chat.ofo else 'очно-заочное/заочное') if chat.find else "не установлено"}`\n"
+                f" URL страницы с расписанием: `{chat.url or "не установлено"}`\n"
+                f" Строка для поиска файла: `{chat.find or "не установлено"}`\n"
+                f" Название листа в файле: `{chat.sheet_name or "не установлено"}`\n"
+                f" Шаблон вывода расписания: `{chat.template if not chat.use_custom_template else "кастомный"}`"
             )
-            if not chat_info.ofo:
+            if not chat.ofo:
                 s += ("\n\n**Дополнительно**:\n"
-                      f" Ссылок на пары в базе: `{len(links)}`")
+                      f" Ссылок в базе: `{len(parser.links)}`")
             if update.message.chat.type == 'private' and update.message.from_user.id in config.admins:
                 s += ("\n\n**Админские настройки**:\n"
                       f" Путь для сохранения файлов: `{config.save_path}`")
             await update.message.reply_text(s, parse_mode='Markdown')
+            if chat.use_custom_template:
+                document = InputFile(json.dumps(chat.custom_template), "custom_template.json")
+                await update.message.reply_document(document)
 
 def main() -> None:
     global username

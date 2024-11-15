@@ -1,33 +1,33 @@
 {
     "basic": {
         "type": "HTML",
-        "ints":["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+        "nums":["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
         "rename": {},
         "header": "<b>Неделя:</b> {week_str}",
-        "day_header": "<b>{sdate} {sname}</b>\n",
-        "day_body":" <b>{i}. {lesson_time}</b> - {lesson_name}\n <i>Преподаватель:</i> {lesson_teacher}\n <i>Местоположение:</i> {lesson_place}\n",
+        "day_header": "<b>{date} {day_name}</b>\n",
+        "day_body":" <b>{i}. {lesson_time}</b> - {lesson_name}\n <i>Преподаватель:</i> {lesson_teacher}\n <i>Местоположение:</i> {lesson_place}",
         "not_ofo": [
             " <i>Ссылка:</i> <a href=\"{lesson_link}\">Подключится</a>",
             " <i>Ссылка:</i> <b>Ссылки нет в базе.</b>"
         ],
         "no_lessons": " <b>Нет пар</b>",
-        "spacing": "\n\n",
+        "spacing": "\n",
         "day_now": "",
         "lesson": ""
     },
     "cringe": {
         "type": "HTML",
-        "ints": ["0", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"],
+        "nums": ["0", "❶", "❷", "❸", "❹", "❺", "❻", "❼", "❽", "❾"],
         "rename": {"ВК": "Контора пидорасов (ВК)"},
         "header": "<b>֍Неделя:</b> {week_str}֎",
-        "day_header": "<b>→ ̸ {sdate} ― {sname}</b>\n",
-        "day_body": " <b>{i}. {lesson_time}</b> - {lesson_name}\n <i>Препод:</i> {lesson_teacher}\n <i>Где?:</i> {lesson_place}\n",
+        "day_header": "<b>→ ̸ {date} ― {day_name}</b>\n",
+        "day_body": " <b>{i}. {lesson_time}</b> - {lesson_name}\n <i>Препод:</i> {lesson_teacher}\n <i>Где?:</i> {lesson_place}",
         "not_ofo": [
             " <i>На, покури:</i> <a href=\"{lesson_link}\">҉</a>",
             " <i>Ссылка:</i> <b>Ссылки нет, иди нахуй.</b>"
         ],
         "no_lessons": " <b>©Сегодня чилл (полный)</b>",
-        "spacing": "\n\n",
+        "spacing": "\n",
         "day_now": "",
         "lesson": ""
     }

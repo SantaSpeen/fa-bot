@@ -1,73 +1,219 @@
 import json
+import os
+import sys
+import urllib.parse
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 
-# Настройки
-row_start = 13 # Номер строки с которой начинаются данные
-row_end = 93  # Номер строки на которой заканчиваются данные
+from core import ChatConfig
 
-col_week = 0  # A Номер столбца с неделей
-row_week = 8  # Номер строки с неделей
 
-col_date = 0  # A Номер столбца с датой
-col_num = 1  # B Номер столбца с номером пары
-col_time = 3  # D Номер столбца с временем
-col_name = 5  # E Номер столбца с названием предмета именем
-offset_teacher = 1  # через сколько после col_name будет имя лектора
-col_aud = 8 # I Номер столбца с аудиторией
-
-len_day = 16 # Длина дня в строках
-len_week = 5 # Длина недели в днях
-
-# список дней недели в строках
-week = [((row_start + len_day * i), row_start + len_day * (i + 1)) for i in range(len_week)]
-with open("core/links.json", "r", encoding="utf-8") as f:
-    links = json.load(f)
-
-def say_nani_to_nan(x):
+def fix_nan(x):
     if pd.isna(x):
         return None
     return x
 
+@dataclass
+class Lesson:
+    num: int
+    name: str = None
+    teacher: str = None
+    time: str = None
+    place: str = None
+    link: str = None
 
-def parse_xls(file_path, sheet_name, even_week=None):
+    @property
+    def empty(self):
+        return self.name is None
 
-    if even_week is False:
-        sheet_name += " НЧН"
-    if even_week is True:
-        sheet_name += " ЧН"
-    print(f"Читаю {sheet_name!r} в файле.")
+    def __str__(self):
+        return f"    L:{self.num} {self.time!r} {self.name!r} {self.teacher!r} {self.place!r} link:{bool(self.link)}"
 
-    sheet_names = list(pd.read_excel(file_path, sheet_name=None).keys())
-    if sheet_name not in sheet_names:
-        return f"\nЛист `{sheet_name}` не доступен. Доступные листы: \n{'\n'.join(sheet_names)}\n"
+@dataclass
+class Day:
+    day_name: str = field(default=None)
+    date: str = field(default=None)
+    lessons: list[Lesson] = field(default_factory=list)
 
-    # Загружаем данные из .xls в DataFrame
-    df = pd.read_excel(file_path, sheet_name=sheet_name)
+    def set_date(self, date):
+        date, day_name = date.replace("  ", " ").split(" ", 1)
+        self.date = date
+        self.day_name = day_name.lower().capitalize()
 
-    data = [{"date": None, "lessons": [{"name": None, "teacher": None, "time": None, "place": None, "link": None} for _ in range(8)]} for _ in range(len_week)]
-    # Отбираем нужные строки
-    for j, (start_day, end_day) in enumerate(week):
-        c = 0  # class
-        o = 0  # offset
-        for i in range(start_day, end_day):
-            if o > 1:
-                o = 0
-            date = df.iloc[i, col_date]
-            if o == 0:
-                if not pd.isna(date):
-                    data[j]['date'] = date
-                num = df.iloc[i, col_num]
-                if not pd.isna(num):
-                    c = int(num) - 1
-                data[j]['lessons'][c]['name'] = say_nani_to_nan(df.iloc[i, col_name])
-                data[j]['lessons'][c]['time'] = say_nani_to_nan(df.iloc[i, col_time])
-                data[j]['lessons'][c]['place'] = say_nani_to_nan(df.iloc[i, col_aud])
-            if o == offset_teacher:
-                data[j]['lessons'][c]['teacher'] = say_nani_to_nan(df.iloc[i, col_name])
-                if data[j]['lessons'][c]['teacher'] is not None:
-                    data[j]['lessons'][c]['link'] = links.get(data[j]['lessons'][c]['teacher'].split(" ")[0].lower(), None)
-            o += 1
-    data.append(df.iloc[row_week, col_week])
+    def add_lesson(self, lesson: Lesson):
+        self.lessons.append(lesson)
 
-    return data
+    @property
+    def empty(self):
+        return all(lesson.empty for lesson in self.lessons)
+
+    def __str__(self):
+        return f"  Day {self.date!r} with {len(self.lessons)} lessons;\n" + "\n".join(str(lesson) for lesson in self.lessons)
+
+@dataclass
+class Week:
+    date: str
+    days: list[Day] = field(default_factory=list)
+
+    def add_day(self, day: Day):
+        self.days.append(day)
+
+    def __str__(self):
+        return f"Week {self.date!r} with {len(self.days)} days;\n" + "\n".join(str(day) for day in self.days)
+
+
+class Parser:
+    # Настройки
+    row_start = 13 # Номер строки с которой начинаются данные
+    row_end = 93  # Номер строки на которой заканчиваются данные
+
+    col_week = 0  # A Номер столбца с неделей
+    row_week = 8  # Номер строки с неделей
+
+    col_date = 0  # A Номер столбца с датой
+    col_num = 1  # B Номер столбца с номером пары
+    col_time = 3  # D Номер столбца с временем
+    col_name = 5  # E Номер столбца с названием предмета именем
+    col_aud = 8 # I Номер столбца с аудиторией
+
+    offset_teacher = 1  # через сколько после col_name будет имя лектора
+    rows_lesson = 2  # Сколько строк занимает одна пара
+
+    len_day = 16 # Длина дня в строках
+    len_week = 5 # Длина недели в днях
+    len_lessons = 8 # Количество пар в день
+
+    def __init__(self, links_path: Path, save_path: Path):
+        self.links_path = links_path
+        self.save_path = save_path
+        if not self.links_path.exists():
+            raise FileNotFoundError(f"Links file not found: {self.links_path}")
+        if not self.save_path.exists():
+            raise FileNotFoundError(f"Save path not found: {self.save_path}")
+        self._links = {}
+        self._read()
+
+        # список дней недели в строках
+        self.week = [(self.row_start + self.len_day * i, self.row_start + self.len_day * (i + 1)) for i in range(self.len_week)]
+
+    def _read(self):
+        if not self.links_path.exists():
+            print("ERR: Файл с ссылками не найден. Восстановите его и перезапустите.")
+            sys.exit(1)
+        try:
+            self._links.update(json.loads(self.links_path.read_text("utf-8")))
+            print("Файл с ссылками загружен.")
+        except json.JSONDecodeError:
+            print("ERR: Файл с ссылками поврежден. Восстановите его и перезапустите.")
+            sys.exit(1)
+
+    @property
+    def links(self):
+        return self._links
+
+    def reload(self):
+        if not self.links_path.exists():
+            self.links_path.write_text(json.dumps(self._links), "utf-8")
+            return "ERR: Файл с шаблонами не найден. Файл восстановлен."
+        old = self._links.copy()
+        self._links.clear()
+        try:
+            j = json.loads(self.links_path.read_text("utf-8"))
+            if len(j) == 0:
+                return "ERR: Файл с ссылками пуст. Изменения не применены."
+            self._links.update(j)
+            return "Ссылки перезагружены."
+        except json.JSONDecodeError:
+            self._links = old
+            return "ERR: Файл с ссылками поврежден. Изменения не применены."
+
+    def download(self, chat: ChatConfig, even_week: bool):
+        response = requests.get(chat.url)
+        if response.status_code == 200:
+            # Парсим HTML-код страницы
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Ищем ссылку на файл с расписанием
+            anchors = soup.find_all('a')
+            link = [urllib.parse.unquote(a.get('href')) for a in anchors if
+                    a.get('href') and a.get("href").endswith(".xls") and chat.find in a.text]
+
+            if link:
+                link = link[1 if even_week else 0]
+                # Получаем полный URL файла
+                file_url = "http://www.fa.ru" + link
+                file_name = os.path.basename(link).replace("'", "").replace(" ", "_")
+                file_path = self.save_path / file_name
+
+                if os.path.exists(file_path):
+                    print(f"Файл '{file_name}' уже существует.")
+                    return file_path
+
+                # Сохраняем файл на локальном диске
+                with open(file_path, 'wb') as file:
+                    file.write(requests.get(file_url).content)
+
+                print(f"Файл '{file_name}' успешно скачан!")
+                return file_path
+            else:
+                print("Ссылка на файл с расписанием не найдена.")
+        else:
+            print("Не удалось получить страницу.")
+        return None
+
+    def parse_xml(self, chat: ChatConfig, file_path, even_week=None):
+        sheet_name = chat.sheet_name
+        if even_week is False:
+            sheet_name += " НЧН"
+        if even_week is True:
+            sheet_name += " ЧН"
+        print(f"Читаю {sheet_name!r} в файле.")
+
+        sheet_names = list(pd.read_excel(file_path, sheet_name=None).keys())
+        if sheet_name not in sheet_names:
+            return f"\nЛист `{sheet_name}` не доступен. Доступные листы: \n{'\n'.join(sheet_names)}\n"
+
+        # Загружаем данные из .xls в DataFrame
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+
+        week = Week(df.iloc[self.row_week, self.col_week])
+        for j, (start_day, end_day) in enumerate(self.week):  # Перебираем дни
+            day = Day()
+            c = 0  # class
+            offset = 0  # offset
+            for i in range(start_day, end_day):  # Перебираем пары
+                if offset > 1:
+                    offset = 0
+                date = df.iloc[i, self.col_date]
+                if offset == 0:
+                    lesson = Lesson(c)
+                    if not pd.isna(date):
+                        day.set_date(date)
+                    num = df.iloc[i, self.col_num]
+                    if not pd.isna(num):
+                        c = int(num) - 1
+                    lesson.name = fix_nan(df.iloc[i, self.col_name])
+                    lesson.time = fix_nan(df.iloc[i, self.col_time])
+                    lesson.place = fix_nan(df.iloc[i, self.col_aud])
+                    day.add_lesson(lesson)
+                if offset == self.offset_teacher:
+                    lesson = day.lessons[c]
+                    lesson.teacher = fix_nan(df.iloc[i, self.col_name])
+                    if lesson.teacher is not None:
+                        lesson.teacher = lesson.teacher.lower().capitalize()
+                        lesson.link = self.links.get(lesson.teacher.split(" ")[0].lower(), None)
+                offset += 1
+            week.add_day(day)
+
+        return week
+
+    def get_data(self, chat: ChatConfig, even_week: bool):
+        file_path = self.download(chat, even_week)
+        if file_path is None:
+            return None
+        return self.parse_xml(chat, file_path, even_week)
+
