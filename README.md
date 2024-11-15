@@ -38,7 +38,11 @@
     ```
 5. Запустите контейнер:
     ```bash
-    docker run -d --name fa-bot fa-bot -v config.json:/app/config.json -v storage:/app/storage
+    docker run -d \
+    --name fa-bot \
+    -v $(pwd)/src/config.json:/app/config.json \
+    -v $(pwd)/src/storage:/app/storage \
+    fa-bot
     ```
 
 ## Использование
