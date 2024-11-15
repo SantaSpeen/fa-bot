@@ -181,7 +181,7 @@ class Config:
         if not self.admins:
             print("WARN: Администраторы не указаны.")
         if not self.save_path.exists():
-            print("Папка для сохранения файлов не создана.")
+            print("Папка для сохранения файлов создана.")
             self.save_path.mkdir(parents=True)
         print("Конфигурация проверена.")
 
