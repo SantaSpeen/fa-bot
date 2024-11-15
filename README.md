@@ -4,22 +4,42 @@
 
 ## Установка
 
+### Простой вариант
+
 1. Установите Python 3.10 или выше.
-2. Установите зависимости:
+2. Склонируйте репозиторий:
+    ```bash
+    git clone https://github.com/SantaSpeen/fa-bot.git && cd fa-bot
+    ```
+3. Установите зависимости:
     ```bash
     pip install -r requirements.txt
     ```
-3. 1 раз запустите бота:
+4. 1 раз запустите бота:
     ```bash
     python main.py
     ```
-4. Введите токен бота, который вы получили у [@BotFather](https://t.me/BotFather) в `config.json`.
-5. Перезапустите бота:
+5. Введите токен бота, который вы получили у [@BotFather](https://t.me/BotFather) в `config.json`.
+6. Перезапустите бота:
     ```bash
     python main.py
     ```
-6. Добавьте бота в группу и дайте ему права администратора.
-7. Готово!
+7. Добавьте бота в группу и дайте ему права администратора.
+8. Готово!
+
+### Docker
+
+1. Установите Docker.
+2. Выполните шаги 2-5 из простого варианта.
+3. Убедитесь что всё работает.
+4. Соберите образ:
+    ```bash
+    docker build -t fa-bot .
+    ```
+5. Запустите контейнер:
+    ```bash
+    docker run -d --name fa-bot fa-bot -v config.json:/app/config.json -v storage:/app/storage
+    ```
 
 ## Использование
 
