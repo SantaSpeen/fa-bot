@@ -27,8 +27,8 @@ help_msg = """\
 """
 help_msg_admin = r"""
 Админские команды:
-    /set\_save\_path - установить путь для сохранения файлов
-    /reload - перезагрузить данные (chats, links, templates)
+  /set\_save\_path - установить путь для сохранения файлов
+  /reload - перезагрузить данные (chats, links, templates)
 """
 
 allow_set_cmds = ("help", "find", "sheet", "url")
