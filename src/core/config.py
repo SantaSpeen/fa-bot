@@ -180,6 +180,9 @@ class Config:
             exit(1)
         if not self.admins:
             print("WARN: Администраторы не указаны.")
+        if not self.save_path.exists():
+            print("Папка для сохранения файлов не создана.")
+            self.save_path.mkdir(parents=True)
         print("Конфигурация проверена.")
 
     def __init_chats_store(self):
