@@ -30,6 +30,12 @@ class Lesson:
     def empty(self):
         return self.name is None
 
+    def replace(self, old, new):
+        if self.name:
+            self.name = self.name.replace(old, new)
+        if self.place:
+            self.place = self.place.replace(old, new)
+
     def __str__(self):
         return f"    L:{self.num} {self.time!r} {self.name!r} {self.teacher!r} {self.place!r} link:{bool(self.link)}"
 

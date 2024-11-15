@@ -31,6 +31,8 @@ class Template:
             for i, lesson in enumerate(day.lessons):
                 if lesson.empty:
                     continue
+                for old, new in self.rename.items():
+                    lesson.replace(old, new)
                 s += self.day_body.format(
                     i=self.nums[lesson.num],
                     lesson_time=lesson.time,
