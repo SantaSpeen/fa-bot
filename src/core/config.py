@@ -86,6 +86,7 @@ class ChatConfig:
     find: str
     sheet_name: str
     template: str = field(default="basic")
+    use_scheduler: bool = field(default=True)
     use_custom_template: bool = field(default=False)
     custom_template: dict = field(default_factory=dict)
     custom_links: dict = field(default_factory=dict)
@@ -141,7 +142,14 @@ class Config:
                 "url": "http://www.fa.ru/fil/krasnodar/student/Pages/schedule.aspx",
                 "find": None,
                 "sheet_name": None,
-                "template": "basic"
+                "template": "basic",
+                "use_scheduler": True,
+            },
+            "scheduler": {
+                "notify_day_at": "07:00:00",
+                "time_pattern": "%H:%M:%S",
+                "date_pattern": "%d.%m.%Y",
+                "prune_rule": "every|none|00:00:00",
             }
         }
         self.__init_config_file()
@@ -149,6 +157,7 @@ class Config:
         self.__chats: dict[int, ChatConfig] = defaultdict(lambda: ChatConfig(**self.__config_raw["default"]))
         self.chats_store = Path(self.__config_raw["chats_store"])
         self.__init_chats_store()
+        self.save()
 
     def __init_config_file(self):
         if not self.config_file.exists():
@@ -248,6 +257,10 @@ class Config:
     def templates(self, value):
         self.__config_raw["templates"] = value
         self.save()
+
+    @property
+    def scheduler(self) -> dict[str, str]:
+        return self.__config_raw["scheduler"]
 
     def save(self):
         self.config_file.write_text(json.dumps(self.__config_raw, indent=4), "utf-8")

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from core import ChatConfig
-from core.parser import Week
+from core.parser import Week, Day, Lesson
 
 
 @dataclass
@@ -15,42 +15,64 @@ class Template:
     header: str
     day_header: str
     day_body: str
-    not_ofo: list[str]
+    link: list[str]
     no_lessons: str
     spacing: str
-    day_now: str
     lesson: str
 
-    def render(self, week: Week, file_name: str):
+    def render_week(self, week: Week, file_name: str):
         ofo = "офо" in file_name.lower()
         s = self.header.format(week_str=week.date) + self.spacing
         for day in week.days:
             if isinstance(day, str):
                 continue
-            s += self.day_header.format(date=day.date, day_name=day.day_name)
-            for i, lesson in enumerate(day.lessons):
-                if lesson.empty:
-                    continue
-                for old, new in self.rename.items():
-                    lesson.replace(old, new)
-                s += self.day_body.format(
-                    i=self.nums[lesson.num],
-                    lesson_time=lesson.time,
-                    lesson_name=lesson.name,
-                    lesson_teacher=lesson.teacher,
-                    lesson_place=lesson.place
-                )
-                s += self.spacing
-                if not ofo:
-                    if lesson.link:
-                        s += self.not_ofo[0].format(lesson_link=lesson.link)
-                    else:
-                        s += self.not_ofo[1]
-                    s += self.spacing
+            s += self.render_day(day, ofo)[0]
             if day.empty:
-                s += self.no_lessons + self.spacing
-            s += self.spacing
+                s += self.spacing
         return s, self.type
+
+    def render_day(self, day: Day, ofo: bool):
+        s = self.day_header.format(date=day.date, day_name=day.day_name)
+        for i, lesson in enumerate(day.lessons):
+            if lesson.empty:
+                continue
+            for old, new in self.rename.items():
+                lesson.replace(old, new)
+            s += self.day_body.format(
+                i=self.nums[lesson.num],
+                lesson_time=lesson.time,
+                lesson_name=lesson.name,
+                lesson_teacher=lesson.teacher,
+                lesson_place=lesson.place
+            )
+            s += self.spacing
+            if not ofo:
+                if lesson.link:
+                    s += self.link[0].format(lesson_link=lesson.link)
+                else:
+                    s += self.link[1]
+                s += self.spacing
+            s += self.spacing
+        if day.empty:
+            s += self.no_lessons
+        return s, self.type
+
+    def render_lesson(self, lesson: Lesson, ofo: bool):
+        s = self.lesson.format(
+            i=self.nums[lesson.num],
+            lesson_time=lesson.time,
+            lesson_name=lesson.name,
+            lesson_teacher=lesson.teacher,
+            lesson_place=lesson.place,
+        )
+        if not ofo:
+            s+= self.spacing
+            if lesson.link:
+                s += self.link[0].format(lesson_link=lesson.link)
+            else:
+                s += self.link[1]
+        return s, self.type
+
 
 class Templator:
     def __init__(self, templates_path: Path):

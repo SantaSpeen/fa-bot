@@ -9,8 +9,8 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-from core import ChatConfig
-
+from .config import ChatConfig
+from .scheduler import Task
 
 def fix_nan(x):
     if pd.isna(x):
@@ -36,6 +36,17 @@ class Lesson:
         if self.place:
             self.place = self.place.replace(old, new)
 
+    @property
+    def task_time(self):
+        t_start = self.time.split("-")[0]
+        h, m = map(int, t_start.split("."))
+        if m < 5:
+            h -= 1
+            m = 55
+        else:
+            m -= 5
+        return f"{h}:{m}:00"
+
     def __str__(self):
         return f"    L:{self.num} {self.time!r} {self.name!r} {self.teacher!r} {self.place!r} link:{bool(self.link)}"
 
@@ -53,6 +64,20 @@ class Day:
     def add_lesson(self, lesson: Lesson):
         self.lessons.append(lesson)
 
+    def tasks(self, callback, chat_id, ofo):
+        tasks = []
+        for lesson in self.lessons:
+            if lesson.empty:
+                continue
+            task = Task(
+                f"I:{chat_id} D:{self.date} L:{lesson.num}",
+                callback,
+                args=(chat_id, ofo),
+                rule=f"once|{self.date}|{lesson.task_time}"
+            )
+            tasks.append(task)
+        return tasks
+
     @property
     def empty(self):
         return all(lesson.empty for lesson in self.lessons)
@@ -67,6 +92,13 @@ class Week:
 
     def add_day(self, day: Day):
         self.days.append(day)
+
+    def tasks(self, callback_day, callback_lesson, chat_id, ofo, notify_day_at):
+        tasks = []
+        for day in self.days:
+            tasks.append(Task(f"I:{chat_id} D:{day.date}", callback_day, args=(chat_id, ofo), rule=f"once|{day.date}|{notify_day_at}"))
+            tasks.extend(day.tasks(callback_lesson, chat_id, ofo))
+        return tasks
 
     def __str__(self):
         return f"Week {self.date!r} with {len(self.days)} days;\n" + "\n".join(str(day) for day in self.days)
@@ -214,7 +246,6 @@ class Parser:
                         lesson.link = self.links.get(lesson.teacher.split(" ")[0].lower(), None)
                 offset += 1
             week.add_day(day)
-
         return week
 
     def get_data(self, chat: ChatConfig, even_week: bool):
