@@ -93,8 +93,6 @@ async def render_and_send(update, context, file, even_week):
         scheduler.tasks = [task for task in scheduler.tasks if not task.name.startswith(f"I:{chat_id}")]
         scheduler.lock = False
         scheduler.add_task(*data.tasks(send_day, send_lesson, chat_id, chat.ofo, config.scheduler['notify_day_at']))
-        send_day(data.days[1], chat_id, chat.ofo)
-        send_lesson(data.days[1].lessons[6], chat_id, chat.ofo)
 
         template = templator.get(chat)
         text, parse_mode = template.render_week(data, file.name)
