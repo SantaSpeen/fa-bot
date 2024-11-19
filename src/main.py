@@ -2,11 +2,13 @@ import asyncio
 import json
 import os
 import traceback
+from datetime import timedelta
 
 from telegram import Update, LinkPreviewOptions, InputFile
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-from core import Templator, Config, Parser, Scheduler
+from core import Templator, Config, Parser
+from core.scheduler import Scheduler, SchedulerSettings
 
 # /set find 1 курс ОЗФО
 # /set sheet 1к Прикладная математика
@@ -59,43 +61,42 @@ template_help = """\
   - `/template use default`\
 """
 
-username = ""
-bot = None
-
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 config = Config("config.json")
 templator = Templator(config.templates)
 parser = Parser(config.links, config.save_path)
-scheduler = Scheduler(config.scheduler)
+
+scheduler = Scheduler(SchedulerSettings(**config.scheduler), loop)
+application = Application.builder().token(config.token).build()
+bot = application.bot
+username = loop.run_until_complete(bot.get_me()).username
+
 
 async def send_message(chat_id, text, parse_mode='Markdown'):
     await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
 
-def send_day(day, chat_id, ofo):
-    s = templator.get(config.get_chat(chat_id)).render_day(day, ofo)
-    loop.create_task(send_message(chat_id, *s))
 
-def send_lesson(lesson, chat_id, ofo):
-    s = templator.get(config.get_chat(chat_id)).render_lesson(lesson, ofo)
+def send_ld(day_or_lesson, chat_id):
+    c = config.get_chat(chat_id)
+    s = templator.get(c).render(day_or_lesson, c.ofo)
     loop.create_task(send_message(chat_id, *s))
 
 async def render_and_send(update, context, file, even_week):
     try:
         chat_id = update.effective_chat.id
         chat = config.get_chat(chat_id)
-        data = parser.parse_xml(chat, file, even_week)
-        if isinstance(data, str):
-            raise Exception(data)
+        week_data = parser.parse_xml(chat, file, even_week)
+        if isinstance(week_data, str):
+            raise Exception(week_data)
 
-        scheduler.lock = True
-        scheduler.tasks = [task for task in scheduler.tasks if not task.name.startswith(f"I:{chat_id}")]
-        scheduler.lock = False
-        scheduler.add_task(*data.tasks(send_day, send_lesson, chat_id, chat.ofo, config.scheduler['notify_day_at']))
+        async with scheduler.lock:
+            scheduler.tasks = [task for task in scheduler.tasks if not task.name.startswith(f"I:{chat_id}")]
+        scheduler.add_task(*week_data.tasks(send_ld, chat_id, config.scheduler['notify_day_at']))
 
         template = templator.get(chat)
-        text, parse_mode = template.render_week(data, file.name)
+        text, parse_mode = template.render(week_data, chat.ofo)
         await context.bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
     except Exception as e:
         traceback.print_exc()
@@ -318,27 +319,20 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 document = InputFile(json.dumps(chat.custom_template), "custom_template.json")
                 await update.message.reply_document(document)
 
-def main() -> None:
-    global username, bot
-    scheduler.start()
-
-    # Создаем приложение
-    application = Application.builder().token(config.token).build()
+def main():
+    # Регистрируем scheduler
+    scheduler.add_prune_task()
+    _scheduler_job = application.job_queue.run_repeating(scheduler.tick, timedelta(seconds=1))
 
     # Регистрация обработчиков
     application.add_handler(MessageHandler(filters.TEXT & filters.REPLY, handle_messages))
     application.add_handler(MessageHandler(filters.TEXT, handle_messages))
-    username = loop.run_until_complete(application.bot.get_me()).username
-    bot = application.bot
     print(f"Запустился. @{username}")
     try:
         # Запускаем бота
         application.run_polling()
     except KeyboardInterrupt:
         pass
-    finally:
-        scheduler.stop()
-
 
 if __name__ == '__main__':
     main()

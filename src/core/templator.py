@@ -20,18 +20,26 @@ class Template:
     spacing: str
     lesson: str
 
-    def render_week(self, week: Week, file_name: str):
-        ofo = "офо" in file_name.lower()
+    def render(self, obj, ofo: bool):
+        if isinstance(obj, Week):
+            return self._render_week(obj, ofo)
+        if isinstance(obj, Day):
+            return self._render_day(obj, ofo)
+        if isinstance(obj, Lesson):
+            return self._render_lesson(obj, ofo)
+        return None
+
+    def _render_week(self, week: Week, ofo: bool):
         s = self.header.format(week_str=week.date) + self.spacing
         for day in week.days:
             if isinstance(day, str):
                 continue
-            s += self.render_day(day, ofo)[0]
+            s += self._render_day(day, ofo)[0]
             if day.empty:
                 s += self.spacing
         return s, self.type
 
-    def render_day(self, day: Day, ofo: bool):
+    def _render_day(self, day: Day, ofo: bool):
         s = self.day_header.format(date=day.date, day_name=day.day_name)
         for i, lesson in enumerate(day.lessons):
             if lesson.empty:
@@ -57,7 +65,7 @@ class Template:
             s += self.no_lessons
         return s, self.type
 
-    def render_lesson(self, lesson: Lesson, ofo: bool):
+    def _render_lesson(self, lesson: Lesson, ofo: bool):
         s = self.lesson.format(
             i=self.nums[lesson.num],
             lesson_time=lesson.time,

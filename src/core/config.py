@@ -130,7 +130,6 @@ class Config:
 
     def __init__(self, global_config):
         self.config_file = Path(global_config)
-        # self.chats_store = None
         self.__config_raw: dict[str, str | list[int] | dict[str, str | None]] = {
             "token": "TOKEN_HERE",
             "admins": [],  # тот кто может менять save_path + links, templates
@@ -146,6 +145,7 @@ class Config:
                 "use_scheduler": True,
             },
             "scheduler": {
+                "timezone": "Europe/Moscow",
                 "notify_day_at": "07:00:00",
                 "time_pattern": "%H:%M:%S",
                 "date_pattern": "%d.%m.%Y",
@@ -168,6 +168,7 @@ class Config:
             _raw = json.loads(self.config_file.read_text("utf-8"))
             self.__config_raw.update(_raw)
             self.__config_raw['default'].update(_raw['default'])
+            self.__config_raw['scheduler'].update(_raw['scheduler'])
         except json.JSONDecodeError:
             print(f"Файл с конфигурацией поврежден: {self.config_file}.\nНастройте его (или удалите для пересоздания) и перезапустите.")
             sys.exit(0)

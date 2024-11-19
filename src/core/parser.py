@@ -64,15 +64,15 @@ class Day:
     def add_lesson(self, lesson: Lesson):
         self.lessons.append(lesson)
 
-    def tasks(self, callback, chat_id, ofo):
+    def tasks(self, callback, chat_id):
         tasks = []
         for lesson in self.lessons:
             if lesson.empty:
                 continue
             task = Task(
-                f"I:{chat_id} D:{self.date} L:{lesson.num}",
+                f"I:{chat_id} L:{lesson.num}",
                 callback,
-                args=(chat_id, ofo),
+                args=(chat_id,),
                 rule=f"once|{self.date}|{lesson.task_time}"
             )
             tasks.append(task)
@@ -93,11 +93,11 @@ class Week:
     def add_day(self, day: Day):
         self.days.append(day)
 
-    def tasks(self, callback_day, callback_lesson, chat_id, ofo, notify_day_at):
+    def tasks(self, callback, chat_id, notify_day_at):
         tasks = []
         for day in self.days:
-            tasks.append(Task(f"I:{chat_id} D:{day.date}", callback_day, args=(chat_id, ofo), rule=f"once|{day.date}|{notify_day_at}"))
-            tasks.extend(day.tasks(callback_lesson, chat_id, ofo))
+            tasks.append(Task(f"I:{chat_id} D:{day.day_name}", callback, args=(chat_id,), rule=f"once|{day.date}|{notify_day_at}"))
+            tasks.extend(day.tasks(callback, chat_id))
         return tasks
 
     def __str__(self):
